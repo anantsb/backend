@@ -1,69 +1,44 @@
 import express from 'express';
-import { createUser, getUsersByEmail } from '../db/users';
-import { authentication, random } from '../helpers';
+import { loginService, registerService } from '../services/auth.service';
 
-export const login = async (req: express.Request , res : express.Response) =>{
+export const login = async (req: express.Request, res: express.Response) => {
   try {
-    const { email , password } = req.body;
+    const { email, password } = req.body;
 
-    if (!email ||  !password){
-      return res.sendStatus(400)
-    }
-
-    const user = await getUsersByEmail(email).select('+authentication.salt +authentication.password');
-
-    if(!user){
+    if (!email || !password) {
       return res.sendStatus(400);
     }
 
-    const expectedHash = authentication(user.authentication.salt,password);
+    const result = await loginService(email, password);
 
-    if (user.authentication.password !== expectedHash){
-      return res.sendStatus(403);
+    if (result.status === 'error') {
+      return res.status(401).json({message: result.message}).end(); // 401 status for unauthorized
     }
 
-    const salt = random();
-    user.authentication.sessionToken = authentication(salt ,user._id.toString())
+    res.cookie('API-Auth', result.responseObj.sessionToken , { domain: 'localhost', path: '/' });
 
-    await user.save();
-
-    res.cookie('API-Auth',user.authentication.sessionToken,{domain:'localhost', path:'/'})
-
-    return res.status(200).json(user).end()
-
+    return res.status(200).json(result.responseObj).end();
   } catch (error) {
-    console.log(error)
-    return res.sendStatus(400)
+    console.log(error);
+    return res.sendStatus(500); // 500 status for server errors
   }
-}
+};
 
-export const register = async (req: express.Request , res : express.Response) =>{
+export const register = async (req: express.Request, res: express.Response) => {
   try {
-    const {username , email , password } = req.body
+    const { username, email, password } = req.body;
+    if (!email || !username || !password) {
+      return res.sendStatus(400);
+    }
+    const result = await registerService(username, email, password);
 
-    if (!email || !username|| !password){
-      return res.sendStatus(400)
+    if (result.status === 'error') {
+      return res.status(409).json({message: result.message}).end();
     }
 
-    const existingUser = await getUsersByEmail(email)
-
-    if(existingUser){
-      return res.sendStatus(400)
-    }
-
-    const salt = random()
-    const user = await createUser({
-      username,
-      email,
-      authentication:{
-        salt,
-        password: authentication(salt,password)
-      }, 
-    })
-
-    return res.status(200).json(user).end()
+    return res.status(200).json(result.userData).end();
   } catch (error) {
-    console.log(error)
-    return res.sendStatus(400)
+    console.log(error);
+    return res.sendStatus(500); // 500 status for server errors
   }
-}
+};
